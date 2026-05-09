@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract MedicineSupplyChain {
+
+    // 👥 Roles
+    enum Role { None, Manufacturer, Distributor, Pharmacy }
+    mapping(address => Role) public roles;
+
+    // 📦 Batch Structure
+    struct Batch {
+        uint id;
+        string name;
+        uint expiry;
+        address manufacturer;
+        address currentOwner;
+        uint timestamp;
+        string status;
+    }
+
+    mapping(uint => Batch) public batches;
+    uint public batchCount = 0;
+
+    // 📢 Events
+    event BatchCreated(uint id);
+    event BatchTransferred(uint id, address from, address to);
+
+    // 🔐 Register Role
+    function registerRole(address _user, Role _role) public {
+        roles[_user] = _role;
+    }
+
+    // 🏭 Create Batch (ONLY Manufacturer)
+    function createBatch(string memory _name, uint _expiry) public {
+        require(roles[msg.sender] == Role.Manufacturer, "Only Manufacturer allowed");
+
+        batchCount++;
+
+        batches[batchCount] = Batch(
+            batchCount,
+            _name,
+            _expiry,
+            msg.sender,
+            msg.sender,
+            block.timestamp,
+            "Created"
+        );
+
+        emit BatchCreated(batchCount);
+    }
+
+    // 🔄 Transfer Batch
+    function transferBatch(uint _id, address _to) public {
+        Batch storage batch = batches[_id];
+
+        require(batch.currentOwner == msg.sender, "Not current owner");
+
+        // Manufacturer → Distributor
+        if (roles[msg.sender] == Role.Manufacturer) {
+            require(roles[_to] == Role.Distributor, "Send to Distributor only");
+            batch.status = "In Transit";
+        }
+
+        // Distributor → Pharmacy
+        else if (roles[msg.sender] == Role.Distributor) {
+            require(roles[_to] == Role.Pharmacy, "Send to Pharmacy only");
+            batch.status = "Delivered";
+        }
+
+        else {
+            revert("Invalid role");
+        }
+
+        batch.currentOwner = _to;
+
+        emit BatchTransferred(_id, msg.sender, _to);
+    }
+
+    // 🏥 Deliver Batch (Pharmacy)
+    function deliverBatch(uint _id) public {
+        require(roles[msg.sender] == Role.Pharmacy, "Only Pharmacy allowed");
+        Batch storage batch = batches[_id];
+        require(batch.currentOwner == msg.sender, "Not current owner");
+        batch.status = "Delivered";
+        // No transfer, stays with pharmacy
+    }
+
+    // 🔍 Get Batch Details
+    function getBatch(uint _id) public view returns (
+        uint, string memory, uint, address, address, uint, string memory
+    ) {
+        Batch memory b = batches[_id];
+        return (b.id, b.name, b.expiry, b.manufacturer, b.currentOwner, b.timestamp, b.status);
+    }
+}
